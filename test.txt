@@ -1,0 +1,5 @@
+ Que se passe-t-il ? Pourquoi ? Comment corriger le problème ? 
+Pour que les modifs soient bien prises en compte sur le repo distant, il faut utiliser les commandes suivantes :
+git add <fichiers>
+git commit -m "message de commit"
+git push
