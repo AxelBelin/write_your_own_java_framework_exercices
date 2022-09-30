@@ -3,7 +3,7 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ master ]
-    
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -12,15 +12,12 @@ jobs:
         java: [ 19 ]
     name: Java ${{ matrix.java }}
     steps:
-    - name: Setup Java Development Kits built by Oracle
-      uses: oracle-actions/setup-java@v1.3.0
-      with:
-    	website: oracle.com
-    	release: 19
-
-    - name: Build with Maven
-      run: mvn -B package
-
-    - name: Execute JUnit 5 integration tests with Maven
-      run: mvn -B test --file pom.xml
-        
+      - uses: actions/checkout@vv3.5.1
+      - name: Setup Java JDK
+        uses: actions/setup-java@v3.5.1
+        with:
+          java-version: ${{ matrix.java }}
+      - name: Build and Execute JUnit 5 integration tests with Maven
+        run: |
+          mvn -B package
+          mvn -B test --file pom.xml
