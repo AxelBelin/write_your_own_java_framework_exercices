@@ -14,7 +14,7 @@ jobs:
       uses: actions/setup-java@v3.5.1
       with:
         distribution: 'temurin'
-    	java-version: '19'
+    	java-version: '19-ea'
     	cache: 'maven'
     	check-latest: true
 
