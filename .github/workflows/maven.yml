@@ -6,18 +6,16 @@ on:
     
 jobs:
   build:
-    runs-on: ubuntu-latest
-
     steps:
-    - name: Setup Java Development Kits built by Oracle
-      uses: oracle-actions/setup-java@v1.3.0
-      with:
-        website: jdk.java.net
-      	release: 19
+    	- name: Setup Java Development Kits built by Oracle
+      	  uses: oracle-actions/setup-java@v1.3.0
+      	  with:
+            website: jdk.java.net
+      	    release: 19
 
-    - name: Build with Maven
-      run: mvn -B package
+    	- name: Build with Maven
+      	  run: mvn -B package
       
-    - name: Execute JUnit 5 integration tests with Maven
-      run: mvn -B test --file pom.xml
+    	- name: Execute JUnit 5 integration tests with Maven
+      	  run: mvn -B test --file pom.xml
         
