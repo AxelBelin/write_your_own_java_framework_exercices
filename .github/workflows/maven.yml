@@ -15,7 +15,7 @@ jobs:
     - name: Setup Java Development Kits built by Oracle
       uses: oracle-actions/setup-java@v1.3.0
       with:
-    	website: jdk.java.net
+    	website: oracle.com
     	release: 19
 
     - name: Build with Maven
