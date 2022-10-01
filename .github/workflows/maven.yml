@@ -18,7 +18,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: ${{ matrix.java }}
-      - name: Build and Execute JUnit 5 integration tests with Maven
+      - name: Build and Execute tests with Maven.
         run: |
           mvn -B package
           mvn -B test --file pom.xml
