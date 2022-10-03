@@ -63,14 +63,16 @@ public final class JSONWriter {
   };
 
   private String parseObject(Object o) {
-	  var configuredParser = funToApply.get(o.getClass());
+	  var cls = o.getClass();
+	  var configuredParser = funToApply.get(cls);
 	  if(configuredParser != null) {
 		  return configuredParser.apply(o);
 	  }
 	  
-	  var generators = BEAN_OR_RECORD_INFO_GENERATOR.get(o.getClass());
-	  return generators.stream().map(generator -> generator.generate(this, o)).collect(
-            joining(", ", "{", "}"));
+	  var generators = BEAN_OR_RECORD_INFO_GENERATOR.get(cls);
+	  return generators.stream()
+			  .map(generator -> generator.generate(this, o))
+			  .collect(joining(", ", "{", "}"));
   }
 
   public String toJSON(Object o) {
@@ -84,10 +86,10 @@ public final class JSONWriter {
     };
   }
 
-  public <T> void configure(Class<T> cls, Function<T, String> applyFun) {
+  public <T> void configure(Class<T> cls, Function<T, String> functionToApply) {
     Objects.requireNonNull(cls);
-    Objects.requireNonNull(applyFun);
-    var res = funToApply.putIfAbsent(cls, applyFun.compose(o -> cls.cast(o)));
+    Objects.requireNonNull(functionToApply);
+    var res = funToApply.putIfAbsent(cls, functionToApply.compose(o -> cls.cast(o))); // cast o into cls type before applying the function with o
     if(res != null) {
       throw new IllegalStateException("configuration for " + cls.getName() + " already exists");
     }
