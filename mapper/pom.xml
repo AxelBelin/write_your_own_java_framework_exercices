@@ -13,6 +13,11 @@
     <groupId>com.github.forax.framework</groupId>
     <version>1.0-SNAPSHOT</version>
     
+    <properties>
+    	<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    	<sonar.projectKey>com.github.forax.framework:mapper</sonar.projectKey>
+    </properties>
+    
     <dependencies>
     	<!-- https://mvnrepository.com/artifact/org.sonarsource.scanner.maven/sonar-maven-plugin -->
 	<dependency>
