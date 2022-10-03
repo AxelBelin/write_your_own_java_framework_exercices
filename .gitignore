@@ -25,3 +25,4 @@ hs_err_pid*
 target/
 /bin/
 /.metadata/
+mapper/src/main/java/com/github/forax/framework/mapper/Person.java
