@@ -17,7 +17,7 @@ public final class InjectorRegistry {
 	      if(properties == null) {
 	    	  throw new IllegalStateException();
 	      }
-	      return List.<PropertyDescriptor>of(properties);
+	      return List.of(properties);
 	  }
 	
 	private static Constructor<?> findConstructor(Class<?> implementClass) {
@@ -25,7 +25,8 @@ public final class InjectorRegistry {
 				.filter(init -> init.isAnnotationPresent(Inject.class))
 				.reduce((initWithInject1, initWithInject2) -> { // si le filter renvoie plusieurs inits qui ont @Inject
 					throw new IllegalStateException("Multiple inits annotated with @Inject for class : " + implementClass.getName());
-				}).orElseGet(() -> Utils.defaultConstructor(implementClass)); // retourne le init par defaut si pas de @Inject
+				})
+				.orElseGet(() -> Utils.defaultConstructor(implementClass)); // retourne le init par defaut si pas de @Inject
 	}
 	
 	// package visibility for testing
@@ -60,7 +61,7 @@ public final class InjectorRegistry {
 		var properties = findInjectableProperties(providerClass);
 		
 		// tout ce qui est a l'exterieur de la lambda sera execute qune seule fois
-		// alorsque tout ce qui est a l'interieur de la lambda seront executés à chaque appel de la lambda
+		// alors que tout ce qui est a l'interieur de la lambda seront executés à chaque appel de la lambda
 		
 		registerProvider(type, () -> {
 			var arguments = Arrays.stream(initParametersTypes)
