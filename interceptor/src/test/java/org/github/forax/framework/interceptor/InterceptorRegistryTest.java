@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class InterceptorRegistryTest {
-  /*
   @Nested
   public class Q1 {
 
@@ -139,9 +138,9 @@ public class InterceptorRegistryTest {
 //    public void findAdvices() throws NoSuchMethodException {
 //      class EmptyAroundAdvice implements AroundAdvice {
 //        @Override
-//        public void pre(Object instance, Method method, Object[] args) {}
+//        public void before(Object instance, Method method, Object[] args) {}
 //        @Override
-//        public void post(Object instance, Method method, Object[] args, Object result) {}
+//        public void after(Object instance, Method method, Object[] args, Object result) {}
 //      }
 //
 //      var registry = new InterceptorRegistry();
@@ -176,36 +175,37 @@ public class InterceptorRegistryTest {
 //          () -> assertEquals(List.of(advice1, advice2, advice3), registry.findAdvices(method3))
 //      );
 //    }
-
-    @Test @Tag("Q2")
-    public void withTwoAdvices() {
-      record ModifyParameterAroundAdvice(int index, Object value) implements AroundAdvice {
-        @Override
-        public void before(Object instance, Method method, Object[] args) {
-          args[index] = value;
-        }
-        @Override
-        public void after(Object instance, Method method, Object[] args, Object result) {}
-      }
-
-      interface Hello {
-        @Tagged1
-        String say(String message, String name);
-      }
-      var hello = new Hello() {
-        @Override
-        public String say(String message, String name) {
-          return message + " " + name;
-        }
-      };
-
-      var registry = new InterceptorRegistry();
-      registry.addAroundAdvice(Tagged1.class, new ModifyParameterAroundAdvice(0, "foo"));
-      registry.addAroundAdvice(Tagged1.class, new ModifyParameterAroundAdvice(1, "bar"));
-      var proxy = registry.createProxy(Hello.class, hello);
-      assertEquals("foo bar", proxy.say("hello", "world"));
-    }
+//
+//    @Test @Tag("Q2")
+//    public void withTwoAdvices() {
+//      record ModifyParameterAroundAdvice(int index, Object value) implements AroundAdvice {
+//        @Override
+//        public void before(Object instance, Method method, Object[] args) {
+//          args[index] = value;
+//        }
+//        @Override
+//        public void after(Object instance, Method method, Object[] args, Object result) {}
+//      }
+//
+//      interface Hello {
+//        @Tagged1
+//        String say(String message, String name);
+//      }
+//      var hello = new Hello() {
+//        @Override
+//        public String say(String message, String name) {
+//          return message + " " + name;
+//        }
+//      };
+//
+//      var registry = new InterceptorRegistry();
+//      registry.addAroundAdvice(Tagged1.class, new ModifyParameterAroundAdvice(0, "foo"));
+//      registry.addAroundAdvice(Tagged1.class, new ModifyParameterAroundAdvice(1, "bar"));
+//      var proxy = registry.createProxy(Hello.class, hello);
+//      assertEquals("foo bar", proxy.say("hello", "world"));
+//    }
   }  // end of Q2
+
 
 
   @Nested
@@ -540,17 +540,17 @@ public class InterceptorRegistryTest {
     @Test @Tag("Q6")
     public void cacheCorrectlyInvalidated() {
       interface Foo {
-        @Example1
+        @Q7.Example1
         default String hello(String message) {
           return message;
         }
       }
       var registry = new InterceptorRegistry();
-      registry.addInterceptor(Example1.class, (o, m, args, next) -> "1" + next.proceed(o, m, args));
+      registry.addInterceptor(Q7.Example1.class, (o, m, args, next) -> "1" + next.proceed(o, m, args));
       var proxy1 = registry.createProxy(Foo.class, new Foo(){});
       proxy1.hello("");  // interceptor list is cached
 
-      registry.addInterceptor(Example1.class, (o, m, args, next) -> "2" + next.proceed(o, m, args));
+      registry.addInterceptor(Q7.Example1.class, (o, m, args, next) -> "2" + next.proceed(o, m, args));
       var proxy2 = registry.createProxy(Foo.class, new Foo() {});
       assertEquals("12", proxy2.hello(""));
     }
@@ -601,6 +601,4 @@ public class InterceptorRegistryTest {
       assertEquals("-hello-", foo.hello("hello"));
     }
   }  // end Q7
-
-  */
 }
