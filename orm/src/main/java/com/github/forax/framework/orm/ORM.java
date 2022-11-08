@@ -2,7 +2,10 @@ package com.github.forax.framework.orm;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.sql.PreparedStatement;
+import java.util.Collections;
 import java.util.Optional;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import javax.sql.DataSource;
 import java.beans.BeanInfo;
@@ -122,6 +125,11 @@ public final class ORM {
         continue;
       }
 
+      //FIXME
+//      if (property.getWriteMethod() == null) {
+//        throw new IllegalStateException("no setter for " + property.getName());
+//      }
+
       var fieldName = findColumnName(property);
       var field = fieldName + " " + resolveType(property);
       joiner.add(field);
@@ -141,23 +149,120 @@ public final class ORM {
     return List.of(properties);
   }
 
-  private static <T> T toEntityClass(ResultSet resultSet, BeanInfo beanInfo, Constructor<T> constructor) throws SQLException {
+  static Object toEntityClass(ResultSet resultSet, BeanInfo beanInfo, Constructor<?> constructor) throws SQLException {
     var instance = Utils.newInstance(constructor);
     var properties = beanProperties(beanInfo);
-    var i = 1;
-
+    var index = 1;
     for(var property: properties) {
+      if(property.getName().equals("class")) {
+        continue;
+      }
       var setter = property.getWriteMethod();
-      var argumentType = setter.getParameterTypes()[0];
-      var columnValue = argumentType.cast(resultSet.getObject(i));
-      Utils.invokeMethod(instance, setter, columnValue);
-      i += 1;
+      if(setter != null) {
+        var columnValue = resultSet.getObject(index); // On connait déjà l'ordre dans lequel les types vont arriver car c'est l'ordre dans lequel la table a été crée.
+        // Comme c'est nous qui avons créé la table alors on connait déjà l'ordre et on sait qu'il est bon.
+        Utils.invokeMethod(instance, setter, columnValue);
+      }
+
+      index += 1;
     }
 
     return instance;
   }
 
-  // TODO findAll(connection, sqlQuery, beanInfo, constructor)
+//  static List<?> findAll(Connection connection, String sqlQuery, BeanInfo beanInfo, Constructor<?> constructor)
+//          throws SQLException {
+//    var instances = new ArrayList<>();
+//    try(var statement = connection.prepareStatement(sqlQuery)) {
+//      try(var resultSet = statement.executeQuery()) {
+//        while(resultSet.next()) {
+//          instances.add(toEntityClass(resultSet, beanInfo, constructor));
+//        }
+//      }
+//    }
+//
+//    return instances;
+//  }
+
+  static List<?> findAll(Connection connection, String sqlQuery, BeanInfo beanInfo, Constructor<?> constructor,  Object...args)
+          throws SQLException {
+    var instances = new ArrayList<>();
+    try(var statement = connection.prepareStatement(sqlQuery)) {
+      if(args != null) {
+        for(var i = 0; i < args.length; i++) {
+          statement.setObject(i + 1, args[i]);
+        }
+      }
+      try(var resultSet = statement.executeQuery()) {
+        while(resultSet.next()) {
+          instances.add(toEntityClass(resultSet, beanInfo, constructor));
+        }
+      }
+    }
+
+    return instances;
+  }
+
+  static String createSaveQuery(String tableName, BeanInfo beanInfo) {
+    var properties = beanInfo.getPropertyDescriptors();
+    var columnNames = Arrays.stream(properties)
+            .map(PropertyDescriptor::getName)
+            .filter(Predicate.not("class"::equals))
+            .collect(Collectors.joining(", "));
+
+    var jokers = String.join(", ", Collections.nCopies(properties.length - 1, "?"));
+
+    // MERGE INTO = INSERT INTO si pas de données OU UPDATE ... SET ... si maj de données
+    return """
+            MERGE INTO %s (%s) VALUES (%s);
+            """.formatted(tableName, columnNames, jokers);
+  }
+
+  static PropertyDescriptor findId(BeanInfo beanInfo) {
+    return Arrays.stream(beanInfo.getPropertyDescriptors())
+            .filter(property -> !property.getName().equals("class"))
+            .filter(property -> property.getReadMethod().isAnnotationPresent(Id.class))
+            .findFirst()
+            .orElse(null);
+  }
+
+  static PropertyDescriptor findProperty(BeanInfo beanInfo, String propertyName) {
+    return Arrays.stream(beanInfo.getPropertyDescriptors())
+            .filter(property -> !property.getName().equals("class"))
+            .filter(property -> property.getName().equals(propertyName))
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException("No property exists with this name"));
+  }
+
+  static Object save(Connection connection, String tableName, BeanInfo beanInfo, Object bean, PropertyDescriptor idProperty) throws SQLException {
+    var sqlQuery = createSaveQuery(tableName, beanInfo);
+    try(var statement = connection.prepareStatement(sqlQuery, Statement.RETURN_GENERATED_KEYS)) {
+      var index = 1;
+      for(var property: beanInfo.getPropertyDescriptors()) {
+        if(property.getName().equals("class")) {
+          continue;
+        }
+
+        var getter = property.getReadMethod();
+        var value = Utils.invokeMethod(bean, getter);
+        statement.setObject(index, value);
+        index += 1;
+      }
+
+      statement.executeUpdate();
+      if(idProperty != null) {
+        try(var resultSet = statement.getGeneratedKeys()) { // En SQL tout est une table donc le resultat des clés générées est une table avec 1 seule ligne et 1 colonne
+          if (resultSet.next()) { // C'est pour ça qu(on utilise un resultSet
+            Long key = (Long) resultSet.getObject(1);
+            var setter = idProperty.getWriteMethod();
+            Utils.invokeMethod(bean, setter, key);
+          }
+        }
+      }
+    }
+
+    return bean;
+  }
 
   public static void createTable(Class<?> beanClass) throws SQLException {
     Objects.requireNonNull(beanClass);
@@ -224,11 +329,36 @@ public final class ORM {
 //      }
 //    }
 
+//    try(var connection = dataSource.getConnection()) {
+//      DATA_THREAD_LOCAL.set(connection);
+//      connection.setAutoCommit(false);
+//      try {
+//        block.run();
+//      } catch(SQLException | RuntimeException e) {
+//        try {
+//          connection.rollback();
+//        } catch(SQLException e2) {
+//          e.addSuppressed(e2); // On garde les 2 info dans les logs : e1 + e2
+//        }
+//
+//        throw e; // je propage l'exception : ca marche c'est soit une SQLException soit une RuntimeException et les SQL sont propagées et les Runtime on est pas onligé de les catch
+//        // On en doit pas faire ça : throw new SQLException() : car on aura perdu toutes les infos de la nature de l'esception vu que ca peut être aussi une Runtime
+//      } finally {
+//        connection.commit();
+//        DATA_THREAD_LOCAL.remove();
+//      }
+//    }
+
     try(var connection = dataSource.getConnection()) {
       DATA_THREAD_LOCAL.set(connection);
       connection.setAutoCommit(false);
       try {
-        block.run();
+        try {
+          block.run();
+        } catch (UncheckedSQLException e) {
+          throw e.getCause();
+        }
+        connection.commit();
       } catch(SQLException | RuntimeException e) {
         try {
           connection.rollback();
@@ -245,39 +375,55 @@ public final class ORM {
     }
   }
 
-  public static <T, ID> Repository<T, ID> createRepository(Class<T> repositoryType) {
+  // On peut déclarer les types paramétrés d'une méthode static les un à la suite des autres : <R extends Repository<T, ID>, T, ID>
+  public static <R extends Repository<T, ID>, T, ID> R createRepository(Class<R> repositoryType) { // TODO ICIICICI FAIRE TOUS LES TESTS et mettre au propre
     Objects.requireNonNull(repositoryType);
-    return new Repository<>() {
-      @Override
-      public List<T> findAll() {
-        var connection = currentConnection();
-        return List.of();
-      }
+    var beanClass = findBeanTypeFromRepository(repositoryType);
+    var beanInfo = Utils.beanInfo(beanClass);
+    var defaultConstructor = Utils.defaultConstructor(beanClass);
+    var tableName = findTableName(beanClass);
 
-      @Override
-      public Optional<T> findById(ID id) {
-        throw new IllegalStateException();
-      }
+    return repositoryType.cast(Proxy.newProxyInstance(repositoryType.getClassLoader(),
+            new Class<?>[] {repositoryType},
+            (proxy, method, args) -> {
+              var methodName = method.getName();
+              if(method.getDeclaringClass() == Object.class) { // On sait que il existe au + 1 classe qui a le même nom car Mon classLoader ne permet pas d'avoir 2 objets class différents
+                throw new UnsupportedOperationException(methodName + " not supported");
+              }
 
-      @Override
-      public T save(T entity) {
-        throw new IllegalStateException();
-      }
+              var connection = currentConnection();
+              try {
+                var query = method.getAnnotation(Query.class);
+                if(query != null) {
+                  return findAll(connection, query.value(), beanInfo, defaultConstructor, args);
+                }
 
-      @Override
-      public boolean equals(Object o) {
-        throw new UnsupportedOperationException();
-      }
-
-      @Override
-      public int hashCode() {
-        throw new UnsupportedOperationException();
-      }
-
-      @Override
-      public String toString() {
-        throw new UnsupportedOperationException();
-      }
-    };
+                return switch (method.getName()) {
+                  case "findAll" -> findAll(connection,
+                          """
+                          SELECT * FROM %s
+                          """.formatted(tableName), beanInfo, defaultConstructor);
+                  case "findById" -> findAll(connection,
+                          """
+                           SELECT * FROM %s WHERE %s = ?
+                           """.formatted(tableName, findColumnName(findId(beanInfo))), beanInfo, defaultConstructor, args)
+                          .stream().findFirst(); // TODO A BIEN TESTER
+                  case "save" -> save(connection, tableName, beanInfo, args[0], findId(beanInfo)); // args[0] = le premier argument de la méthode save(). Dans l'interface Repository save() prend juste un T qui est l'instance à save en BD.
+                  default -> {
+                    if(methodName.startsWith("findBy")) {
+                      var propertyName = Introspector.decapitalize(methodName.substring("findBy".length()));
+                      var property = findProperty(beanInfo, propertyName);
+                      yield findAll(connection, """
+                              SELECT * FROM %s WHERE %s = ?
+                              """.formatted(tableName, findColumnName(property)), beanInfo, defaultConstructor, args)
+                              .stream().findFirst(); // TODO A BIEN TESTER
+                    }
+                    throw new IllegalStateException(methodName + " not supported");
+                  }
+                };
+              } catch(SQLException e) {
+                throw new UncheckedSQLException(e);
+              }
+    }));
   }
 }
