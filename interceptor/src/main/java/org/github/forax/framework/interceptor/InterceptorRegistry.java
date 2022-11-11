@@ -13,10 +13,10 @@ import java.util.stream.Stream;
 
 public final class InterceptorRegistry {
 //  private AroundAdvice advice;
-//  private final HashMap<Class<?>, List<AroundAdvice>> advicesMap = new HashMap<>();
-  private final HashMap<Class<?>, List<Interceptor>> interceptorsMap = new HashMap<>();
+  private final HashMap<Class<? extends Annotation>, List<AroundAdvice>> advicesMap = new HashMap<>();
+  private final HashMap<Class<? extends Annotation>, List<Interceptor>> interceptorsMap = new HashMap<>();
 
-  // Invalider le cache lorsque l'on ajoute un nouvel Interceptor associé à une annotation car lorsque l'on appelle une méthode, on doit aussi appeler ses Interceptor associés.
+  // Invalider le cache lorsque l'on ajoute un nouvel Interceptor car lorsque l'on appelle une méthode, on doit aussi appeler ses Interceptor associés.
   // Ainsi, les appels de méthodes changent donc il faut invalider le cache pour éviter des problèmes liés aux Invocations.
   private final HashMap<Method, Invocation> cache = new HashMap<>();
 
@@ -25,7 +25,7 @@ public final class InterceptorRegistry {
     var reversedList = Utils.reverseList(interceptorList);
     for(var interceptor: reversedList) {
       var oldInvocation = invocation; // on doit catcher car déclaré en dehors de la bocule
-      invocation = (instance, method, args) -> interceptor.intercept(instance, method, args, oldInvocation); // liste chainée : on fait une lambda qui appelle le prochain interceptor. Le prochain interceptor appellera a son tour l'ancienne invocation qi peut être soit la méthode, soit la prochaine invocation
+      invocation = (instance, method, args) -> interceptor.intercept(instance, method, args, oldInvocation); // liste chainée
     }
 
     return invocation;
@@ -41,12 +41,12 @@ public final class InterceptorRegistry {
     var parametersAnnotation = Arrays.stream(method.getParameterAnnotations()).flatMap(Arrays::stream);
     return Stream.of(classAnnotations, methodAnnotation, parametersAnnotation)
             .flatMap(s -> s)
-            .distinct()
+            .distinct() // pour virer les doublons d'annotations
             .flatMap(annotation -> interceptorsMap.getOrDefault(annotation.annotationType(), List.of()).stream())
             .toList();
   }
 
-  public void addInterceptor(Class<? extends Annotation> annotationClass, Interceptor interceptor) { // Toutes les annotations héritent/implémentent l'interface Annotation
+  public void addInterceptor(Class<? extends Annotation> annotationClass, Interceptor interceptor) {
     requireNonNull(annotationClass);
     requireNonNull(interceptor);
     interceptorsMap.computeIfAbsent(annotationClass, __ -> new ArrayList<>())
@@ -54,36 +54,36 @@ public final class InterceptorRegistry {
     cache.clear(); // invalider le cache ici
   }
 
-//  List<AroundAdvice> findAdvices(Method method) {
-//    // On fait un flatMap car pour une annotation on peut avoir plusioeurs advices dans la map -> c'est comme une boucle imbriquée.
-//    // List.of() renvoie toujours la même instance car c'est une liste immutable -> c'est une constance donc on peut le mettre en 2ème param de getOrDefault
-//    return Arrays.stream(method.getDeclaredAnnotations())
-//            .flatMap(annotation -> advicesMap.getOrDefault(annotation.annotationType(), List.of()).stream())
-//            .toList();
-//  }
+  List<AroundAdvice> findAdvices(Method method) {
+    // On fait un flatMap car pour une annotation on peut avoir plusioeurs advices dans la map -> c'est comme une boucle imbriquée.
+    // List.of() renvoie toujours la même instance car c'est une liste immutable -> c'est une constance donc on peut le mettre en 2ème param de getOrDefault
+    return Arrays.stream(method.getDeclaredAnnotations())
+            .flatMap(annotation -> advicesMap.getOrDefault(annotation.annotationType(), List.of()).stream())
+            .toList();
+  }
 
-//  public void addAroundAdvice(Class<?> annotationClass, AroundAdvice aroundAdvice) {
-//    requireNonNull(annotationClass);
-//    requireNonNull(aroundAdvice);
-//    advicesMap.computeIfAbsent(annotationClass, __ -> new ArrayList<>())
-//            .add(aroundAdvice); // __ = Osef du paramètre de la Function on veut pas lui donner un nom donc __ car c'est un nom de variable valide
-//  }
-
-  public void addAroundAdvice(Class<? extends Annotation> annotationClass, AroundAdvice aroundAdvice) { // Toutes les annotations héritent/implémentent l'interface Annotation
+  public void addAroundAdvice(Class<? extends Annotation> annotationClass, AroundAdvice aroundAdvice) {
     requireNonNull(annotationClass);
     requireNonNull(aroundAdvice);
-    addInterceptor(annotationClass, (instance, method, args, invocation) -> {
-      aroundAdvice.before(instance, method, args);
-
-      Object result = null;
-      try {
-        result = Utils.invokeMethod(instance, method, args);
-      } finally {
-        aroundAdvice.after(instance, method, args, result);
-      }
-      return result;
-    });
+    advicesMap.computeIfAbsent(annotationClass, __ -> new ArrayList<>())
+            .add(aroundAdvice); // __ = Osef du paramètre de la Function on veut pas lui donner un nom donc __ car c'est un nom de variable valide
   }
+
+//  public void addAroundAdvice(Class<? extends Annotation> annotationClass, AroundAdvice aroundAdvice) {
+//    requireNonNull(annotationClass);
+//    requireNonNull(aroundAdvice);
+//    addInterceptor(annotationClass, (instance, method, args, invocation) -> {
+//      aroundAdvice.before(instance, method, args);
+//
+//      Object result = null;
+//      try {
+//        result = Utils.invokeMethod(instance, method, args);
+//      } finally {
+//        aroundAdvice.after(instance, method, args, result);
+//      }
+//      return result;
+//    });
+//  }
 
 //  public <T> T createProxy(Class<T> type, T delegate) {
 //    requireNonNull(type);
