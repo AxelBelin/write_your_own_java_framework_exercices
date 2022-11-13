@@ -1,10 +1,6 @@
 package com.github.forax.framework.orm;
 
-import java.lang.reflect.InvocationHandler;
-import java.lang.reflect.Method;
-import java.sql.PreparedStatement;
 import java.util.Collections;
-import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import javax.sql.DataSource;
@@ -170,20 +166,6 @@ public final class ORM {
     return instance;
   }
 
-//  static List<?> findAll(Connection connection, String sqlQuery, BeanInfo beanInfo, Constructor<?> constructor)
-//          throws SQLException {
-//    var instances = new ArrayList<>();
-//    try(var statement = connection.prepareStatement(sqlQuery)) {
-//      try(var resultSet = statement.executeQuery()) {
-//        while(resultSet.next()) {
-//          instances.add(toEntityClass(resultSet, beanInfo, constructor));
-//        }
-//      }
-//    }
-//
-//    return instances;
-//  }
-
   static List<?> findAll(Connection connection, String sqlQuery, BeanInfo beanInfo, Constructor<?> constructor,  Object...args)
           throws SQLException {
     var instances = new ArrayList<>();
@@ -211,11 +193,8 @@ public final class ORM {
             .collect(Collectors.joining(", "));
 
     var jokers = String.join(", ", Collections.nCopies(properties.length - 1, "?"));
-
-    // MERGE INTO = INSERT INTO si pas de données OU UPDATE ... SET ... si maj de données
     return """
-            MERGE INTO %s (%s) VALUES (%s);
-            """.formatted(tableName, columnNames, jokers);
+            MERGE INTO %s (%s) VALUES (%s);""".formatted(tableName, columnNames, jokers);
   }
 
   static PropertyDescriptor findId(BeanInfo beanInfo) {
@@ -250,10 +229,11 @@ public final class ORM {
       }
 
       statement.executeUpdate();
+
       if(idProperty != null) {
-        try(var resultSet = statement.getGeneratedKeys()) { // En SQL tout est une table donc le resultat des clés générées est une table avec 1 seule ligne et 1 colonne
-          if (resultSet.next()) { // C'est pour ça qu(on utilise un resultSet
-            Long key = (Long) resultSet.getObject(1);
+        try(var resultSet = statement.getGeneratedKeys()) {
+          if (resultSet.next()) {
+            var key = resultSet.getObject(1);
             var setter = idProperty.getWriteMethod();
             Utils.invokeMethod(bean, setter, key);
           }
@@ -268,37 +248,17 @@ public final class ORM {
     Objects.requireNonNull(beanClass);
     var connection = currentConnection();
     var name = findTableName(beanClass);
-
-
-//    var properties = Arrays.stream(Utils.beanInfo(beanClass).getPropertyDescriptors())
-//            .filter(property -> !property.getName().equals("class"))
-//            .map(property -> findColumnName(property) + " VARCHAR(255)").collect(Collectors.joining(",\n"));
-//    var query = """
-//    CREATE TABLE %s (
-//      %s
-//    );
-//   """.formatted(name, properties);
-
-//    var properties = Arrays.stream(Utils.beanInfo(beanClass).getPropertyDescriptors())
-//            .filter(property -> !property.getName().equals("class"))
-//            .map(property -> findColumnName(property) + " " + resolveType(property)).collect(Collectors.joining(",\n"));
-//    var query = """
-//    CREATE TABLE %s (
-//      %s
-//    );
-//   """.formatted(name, properties);
-
     var query = """
     CREATE TABLE %s (
       %s
     );
    """.formatted(name, parseProperties(beanClass));
 
-      try(Statement statement = connection.createStatement()) {
-        statement.executeUpdate(query);
-      }
+    try(Statement statement = connection.createStatement()) {
+      statement.executeUpdate(query);
+    }
 
-      connection.commit();
+    connection.commit();
   }
 
   static Connection currentConnection() {
@@ -316,39 +276,6 @@ public final class ORM {
     Objects.requireNonNull(dataSource);
     Objects.requireNonNull(block);
 
-//    try(var connection = dataSource.getConnection()) {
-//      DATA_THREAD_LOCAL.set(connection);
-//      try {
-//        block.run();
-//      } catch(SQLException | RuntimeException e) {
-//        connection.rollback();
-//        throw e; // je propage l'exception : ca marche c'est soit une SQLException soit une RuntimeException et les SQL sont propagées et les Runtime on est pas onligé de les catch
-//        // On en doit pas faire ça : throw new SQLException() : car on aura perdu toutes les infos de la nature de l'esception vu que ca peut être aussi une Runtime
-//      } finally {
-//        DATA_THREAD_LOCAL.remove();
-//      }
-//    }
-
-//    try(var connection = dataSource.getConnection()) {
-//      DATA_THREAD_LOCAL.set(connection);
-//      connection.setAutoCommit(false);
-//      try {
-//        block.run();
-//      } catch(SQLException | RuntimeException e) {
-//        try {
-//          connection.rollback();
-//        } catch(SQLException e2) {
-//          e.addSuppressed(e2); // On garde les 2 info dans les logs : e1 + e2
-//        }
-//
-//        throw e; // je propage l'exception : ca marche c'est soit une SQLException soit une RuntimeException et les SQL sont propagées et les Runtime on est pas onligé de les catch
-//        // On en doit pas faire ça : throw new SQLException() : car on aura perdu toutes les infos de la nature de l'esception vu que ca peut être aussi une Runtime
-//      } finally {
-//        connection.commit();
-//        DATA_THREAD_LOCAL.remove();
-//      }
-//    }
-
     try(var connection = dataSource.getConnection()) {
       DATA_THREAD_LOCAL.set(connection);
       connection.setAutoCommit(false);
@@ -358,16 +285,14 @@ public final class ORM {
         } catch (UncheckedSQLException e) {
           throw e.getCause();
         }
-        connection.commit();
       } catch(SQLException | RuntimeException e) {
         try {
           connection.rollback();
         } catch(SQLException e2) {
-          e.addSuppressed(e2); // On garde les 2 info dans les logs : e1 + e2
+          e.addSuppressed(e2);
         }
 
-        throw e; // je propage l'exception : ca marche c'est soit une SQLException soit une RuntimeException et les SQL sont propagées et les Runtime on est pas onligé de les catch
-        // On en doit pas faire ça : throw new SQLException() : car on aura perdu toutes les infos de la nature de l'esception vu que ca peut être aussi une Runtime
+        throw e;
       } finally {
         connection.commit();
         DATA_THREAD_LOCAL.remove();
@@ -375,8 +300,7 @@ public final class ORM {
     }
   }
 
-  // On peut déclarer les types paramétrés d'une méthode static les un à la suite des autres : <R extends Repository<T, ID>, T, ID>
-  public static <R extends Repository<T, ID>, T, ID> R createRepository(Class<R> repositoryType) { // TODO ICIICICI FAIRE TOUS LES TESTS et mettre au propre
+  public static <R extends Repository<T, ID>, T, ID> R createRepository(Class<R> repositoryType) {
     Objects.requireNonNull(repositoryType);
     var beanClass = findBeanTypeFromRepository(repositoryType);
     var beanInfo = Utils.beanInfo(beanClass);
@@ -399,24 +323,34 @@ public final class ORM {
                 }
 
                 return switch (method.getName()) {
-                  case "findAll" -> findAll(connection,
+                  case "findAll" -> findAll(
+                          connection,
                           """
                           SELECT * FROM %s
                           """.formatted(tableName), beanInfo, defaultConstructor);
-                  case "findById" -> findAll(connection,
+                  case "findById" -> findAll(
+                          connection,
                           """
                            SELECT * FROM %s WHERE %s = ?
-                           """.formatted(tableName, findColumnName(findId(beanInfo))), beanInfo, defaultConstructor, args)
-                          .stream().findFirst(); // TODO A BIEN TESTER
-                  case "save" -> save(connection, tableName, beanInfo, args[0], findId(beanInfo)); // args[0] = le premier argument de la méthode save(). Dans l'interface Repository save() prend juste un T qui est l'instance à save en BD.
+                           """.formatted(tableName, findColumnName(findId(beanInfo))),
+                          beanInfo,
+                          defaultConstructor,
+                          args
+                  ).stream().findFirst();
+                  case "save" -> save(connection, tableName, beanInfo, args[0], findId(beanInfo)); // args[0] = le premier argument de la méthode save().
                   default -> {
                     if(methodName.startsWith("findBy")) {
                       var propertyName = Introspector.decapitalize(methodName.substring("findBy".length()));
                       var property = findProperty(beanInfo, propertyName);
-                      yield findAll(connection, """
+                      yield findAll(
+                              connection,
+                              """
                               SELECT * FROM %s WHERE %s = ?
-                              """.formatted(tableName, findColumnName(property)), beanInfo, defaultConstructor, args)
-                              .stream().findFirst(); // TODO A BIEN TESTER
+                              """.formatted(tableName, findColumnName(property)),
+                              beanInfo,
+                              defaultConstructor,
+                              args
+                      ).stream().findFirst();
                     }
                     throw new IllegalStateException(methodName + " not supported");
                   }
